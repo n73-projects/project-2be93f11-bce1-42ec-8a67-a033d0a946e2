@@ -1,13 +1,13 @@
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "./components/ui/chart";
+import { ChartContainer, ChartTooltip } from "./components/ui/chart";
 import type { ChartConfig } from "./components/ui/chart";
-import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from "recharts";
 
 // Trading pairs data
 const tradingPairs = ["BTC-USDT", "ETH-USDT", "XMR-USDT"];
 
 // Trading data interfaces
-interface TradeData {
+interface TradeBarData {
   id: string;
   type: 'LONG' | 'SHORT';
   startTime: string;
@@ -17,120 +17,118 @@ interface TradeData {
   fee: number;
   startPrice: number;
   endPrice: number;
+  duration: number; // Duration in days for bar height
+  profitLoss: number; // For bar color
+  dateLabel: string; // For X-axis display
+  startDay: number; // Day number for positioning
 }
 
-interface PricePoint {
-  timestamp: string;
-  time: string;
-  price: number;
-  openTrade: number | null;
-  closeTrade: number | null;
-  volume: number;
-}
-
-// Generate mock trading data for each pair
+// Generate mock trading data for each pair as bars
 const generateTradingData = (pair: string) => {
   const basePrice = pair === "BTC-USDT" ? 43000 : pair === "ETH-USDT" ? 2500 : 180;
-  const data: PricePoint[] = [];
-  const trades: TradeData[] = [];
+  const trades: TradeBarData[] = [];
   
-  // Generate more realistic price movements with trend
-  let currentPrice = basePrice;
-  const trend = (Math.random() - 0.5) * 0.02; // Small trend factor
+  // Generate trades over the last 30 days
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   
-  // Generate some realistic trades first
-  for (let t = 0; t < 5; t++) {
-    const startIndex = Math.floor(Math.random() * 70) + 10;
-    const duration = Math.floor(Math.random() * 20) + 5; // 5-25 periods
-    const endIndex = Math.min(startIndex + duration, 95);
+  // Generate 8-12 trades over the 30-day period
+  const numTrades = Math.floor(Math.random() * 5) + 8;
+  
+  for (let t = 0; t < numTrades; t++) {
+    // Random start day within the 30-day window
+    const startDayOffset = Math.floor(Math.random() * 25); // Start within first 25 days
+    const startDate = new Date(thirtyDaysAgo.getTime() + startDayOffset * 24 * 60 * 60 * 1000);
+    
+    // Random duration between 1-8 days
+    const durationDays = Math.floor(Math.random() * 7) + 1;
+    const endDate = new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000);
     
     const tradeType = Math.random() > 0.5 ? 'LONG' : 'SHORT';
-    const fundingTotal = (Math.random() - 0.5) * 2; // -1% to +1%
+    const fundingTotal = (Math.random() - 0.5) * 3; // -1.5% to +1.5%
     const fee = 1.20;
     
-    const startTime = new Date(Date.now() - (99 - startIndex) * 15 * 60 * 1000);
-    const endTime = new Date(Date.now() - (99 - endIndex) * 15 * 60 * 1000);
+    // Calculate periods (assuming 8-hour periods per day)
+    const periods = durationDays * 3;
+    
+    // Calculate profit/loss for bar height (0-100 scale)
+    const profitLoss = Math.abs(fundingTotal) * 20 + 20; // Scale for visualization
     
     trades.push({
       id: `trade-${t}`,
       type: tradeType,
-      startTime: startTime.toISOString(),
-      endTime: endTime.toISOString(),
+      startTime: startDate.toISOString(),
+      endTime: endDate.toISOString(),
       fundingTotal,
-      periods: duration,
+      periods,
       fee,
-      startPrice: 0, // Will be set later
-      endPrice: 0    // Will be set later
+      startPrice: basePrice + (Math.random() - 0.5) * basePrice * 0.1,
+      endPrice: basePrice + (Math.random() - 0.5) * basePrice * 0.1,
+      duration: durationDays,
+      profitLoss,
+      dateLabel: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      startDay: startDayOffset
     });
   }
   
-  for (let i = 0; i < 100; i++) {
-    // Price moves with some volatility and trend
-    const volatility = 0.02 + Math.random() * 0.03;
-    const change = (Math.random() - 0.5) * volatility + trend;
-    currentPrice = currentPrice * (1 + change);
-    
-    const timestamp = new Date(Date.now() - (99 - i) * 15 * 60 * 1000);
-    
-    // Check if this point is a trade start or end
-    let openTrade = null;
-    let closeTrade = null;
-    
-    for (const trade of trades) {
-      const tradeStart = new Date(trade.startTime).getTime();
-      const tradeEnd = new Date(trade.endTime).getTime();
-      const currentTime = timestamp.getTime();
-      
-      if (Math.abs(currentTime - tradeStart) < 15 * 60 * 1000) { // Within 15 minutes
-        openTrade = currentPrice;
-        trade.startPrice = currentPrice;
-      }
-      if (Math.abs(currentTime - tradeEnd) < 15 * 60 * 1000) { // Within 15 minutes
-        closeTrade = currentPrice;
-        trade.endPrice = currentPrice;
-      }
-    }
-    
-    data.push({
-      timestamp: timestamp.toISOString(),
-      time: timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      price: Math.round(currentPrice * 100) / 100,
-      openTrade,
-      closeTrade,
-      volume: Math.round((Math.random() * 1000 + 100) * 100) / 100,
-    });
-  }
+  // Sort trades by start date
+  trades.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
   
-  return { data, trades };
+  return trades;
 };
 
 const chartConfig = {
-  price: {
-    label: "Price",
+  profitLoss: {
+    label: "Trade Performance",
     color: "hsl(var(--chart-1))",
   },
-  openTrade: {
-    label: "Open Trade",
+  long: {
+    label: "LONG Trade",
     color: "hsl(var(--chart-2))",
   },
-  closeTrade: {
-    label: "Close Trade",
+  short: {
+    label: "SHORT Trade",
     color: "hsl(var(--chart-3))",
   },
 } satisfies ChartConfig;
 
 const TradingChart = ({ pair }: { pair: string }) => {
-  const { data, trades } = generateTradingData(pair);
-  const currentPrice = data[data.length - 1]?.price || 0;
-  const previousPrice = data[data.length - 2]?.price || 0;
-  const priceChange = currentPrice - previousPrice;
-  const priceChangePercent = ((priceChange / previousPrice) * 100);
+  const trades = generateTradingData(pair);
   
-  const openTrades = data.filter(d => d.openTrade !== null).length;
-  const closeTrades = data.filter(d => d.closeTrade !== null).length;
+  const longTrades = trades.filter(t => t.type === 'LONG').length;
+  const shortTrades = trades.filter(t => t.type === 'SHORT').length;
+  const avgFunding = trades.reduce((sum, t) => sum + t.fundingTotal, 0) / trades.length;
 
   const formatTradeDate = (dateString: string) => {
     return new Date(dateString).toISOString().slice(0, 19).replace('T', ' ');
+  };
+
+  // Custom tooltip for bar chart
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length > 0) {
+      const trade = payload[0].payload;
+      return (
+        <div className="bg-background border rounded-lg p-3 shadow-lg">
+          <p className="font-semibold text-sm">
+            <span className={trade.type === 'LONG' ? 'text-green-600' : 'text-red-600'}>
+              {trade.type} Trade
+            </span>
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Duration: {trade.duration} day{trade.duration > 1 ? 's' : ''}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Funding: <span className={trade.fundingTotal >= 0 ? 'text-green-600' : 'text-red-600'}>
+              {trade.fundingTotal >= 0 ? '+' : ''}{trade.fundingTotal.toFixed(2)}%
+            </span>
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Periods: {trade.periods}
+          </p>
+        </div>
+      );
+    }
+    return null;
   };
   
   return (
@@ -140,82 +138,46 @@ const TradingChart = ({ pair }: { pair: string }) => {
           <div>
             <div className="text-xl font-bold">{pair}</div>
             <div className="text-sm text-muted-foreground mt-1">
-              ${currentPrice.toLocaleString()} 
-              <span className={`ml-2 ${priceChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                {priceChange >= 0 ? '+' : ''}{priceChangePercent.toFixed(2)}%
+              Avg Funding: 
+              <span className={`ml-2 ${avgFunding >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                {avgFunding >= 0 ? '+' : ''}{avgFunding.toFixed(2)}%
               </span>
             </div>
           </div>
           <div className="text-right text-sm text-muted-foreground">
-            <div>Opens: {openTrades}</div>
-            <div>Closes: {closeTrades}</div>
+            <div>Long: {longTrades}</div>
+            <div>Short: {shortTrades}</div>
           </div>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <ChartContainer config={chartConfig} className="h-[300px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={data} margin={{ top: 10, right: 30, left: 10, bottom: 5 }}>
+            <BarChart data={trades} margin={{ top: 10, right: 30, left: 10, bottom: 5 }}>
               <XAxis 
-                dataKey="time" 
+                dataKey="dateLabel" 
                 tick={{ fontSize: 10 }}
-                interval={Math.floor(data.length / 6)}
                 axisLine={false}
                 tickLine={false}
               />
               <YAxis 
                 tick={{ fontSize: 10 }}
-                domain={['dataMin - 50', 'dataMax + 50']}
                 axisLine={false}
                 tickLine={false}
-                tickFormatter={(value) => `$${value.toLocaleString()}`}
+                label={{ value: 'Duration (Days)', angle: -90, position: 'insideLeft' }}
               />
-              <ChartTooltip 
-                content={<ChartTooltipContent 
-                  formatter={(value, name) => [
-                    name === 'price' ? `$${Number(value).toLocaleString()}` : 
-                    name === 'openTrade' ? `Open: $${Number(value).toLocaleString()}` :
-                    name === 'closeTrade' ? `Close: $${Number(value).toLocaleString()}` : value,
-                    name === 'price' ? 'Price' : 
-                    name === 'openTrade' ? 'Open Trade' :
-                    name === 'closeTrade' ? 'Close Trade' : name
-                  ]}
-                />}
-                labelFormatter={(value) => `Time: ${value}`}
-              />
+              <ChartTooltip content={<CustomTooltip />} />
               
-              {/* Price line */}
-              <Line
-                type="monotone"
-                dataKey="price"
-                stroke="hsl(var(--chart-1))"
-                strokeWidth={2}
-                dot={false}
-                name="price"
-              />
-              
-              {/* Open trade markers */}
-              <Line
-                type="monotone"
-                dataKey="openTrade"
-                stroke="hsl(var(--chart-2))"
-                strokeWidth={0}
-                dot={{ fill: "hsl(var(--chart-2))", strokeWidth: 2, r: 5 }}
-                connectNulls={false}
-                name="openTrade"
-              />
-              
-              {/* Close trade markers */}
-              <Line
-                type="monotone"
-                dataKey="closeTrade"
-                stroke="hsl(var(--chart-3))"
-                strokeWidth={0}
-                dot={{ fill: "hsl(var(--chart-3))", strokeWidth: 2, r: 5 }}
-                connectNulls={false}
-                name="closeTrade"
-              />
-            </ComposedChart>
+              {/* Trade bars */}
+              <Bar dataKey="duration" radius={[2, 2, 0, 0]}>
+                {trades.map((trade, index) => (
+                  <Cell 
+                    key={`cell-${index}`} 
+                    fill={trade.type === 'LONG' ? 'hsl(var(--chart-2))' : 'hsl(var(--chart-3))'}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
           </ResponsiveContainer>
         </ChartContainer>
         
@@ -254,7 +216,7 @@ function App() {
         <div className="text-center space-y-2">
           <h1 className="text-4xl font-bold tracking-tight">Trading Dashboard</h1>
           <p className="text-muted-foreground text-lg">
-            Real-time monitoring of trading pairs with open and close positions
+            Bar chart visualization of trading pairs showing trade duration and performance
           </p>
         </div>
         
@@ -265,34 +227,35 @@ function App() {
         </div>
         
         <Card className="p-6">
-          <h3 className="font-semibold mb-4 text-lg">Trading Legend & Information</h3>
+          <h3 className="font-semibold mb-4 text-lg">Trading Bar Chart Legend & Information</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <h4 className="font-medium mb-3">Chart Elements</h4>
               <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-3">
-                  <div className="w-6 h-0.5 bg-chart-1"></div>
-                  <span>Price Movement Line</span>
+                  <div className="w-4 h-6 bg-chart-2 rounded-sm"></div>
+                  <span>LONG Trade Bar (Green)</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-full bg-chart-2"></div>
-                  <span>Open Trade Position (Buy/Long)</span>
+                  <div className="w-4 h-6 bg-chart-3 rounded-sm"></div>
+                  <span>SHORT Trade Bar (Red)</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-full bg-chart-3"></div>
-                  <span>Close Trade Position (Sell/Exit)</span>
+                  <div className="w-4 h-4 border border-muted-foreground rounded-sm"></div>
+                  <span>Bar Height = Trade Duration (Days)</span>
                 </div>
               </div>
             </div>
             <div>
               <h4 className="font-medium mb-3">Trading Information</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <p>• Charts show 15-minute interval data over the last 25 hours</p>
-                <p>• Each card displays recent trades with detailed information</p>
-                <p>• LONG trades are shown in green, SHORT trades in red</p>
-                <p>• Funding totals show net profit/loss percentage</p>
-                <p>• Trade periods indicate duration in 15-minute intervals</p>
-                <p>• Hover over charts for detailed price and time information</p>
+                <p>• Each bar represents one complete trade from open to close</p>
+                <p>• Bar height shows trade duration in days</p>
+                <p>• X-axis shows trade start dates over the last 30 days</p>
+                <p>• LONG trades (green bars) vs SHORT trades (red bars)</p>
+                <p>• Hover over bars for detailed trade information</p>
+                <p>• Trade history below shows complete trade details</p>
+                <p>• Funding totals show net profit/loss percentage per trade</p>
               </div>
             </div>
           </div>
