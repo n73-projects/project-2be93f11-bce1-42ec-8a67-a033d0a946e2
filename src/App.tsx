@@ -6,14 +6,63 @@ import { ComposedChart, Line, XAxis, YAxis, ResponsiveContainer } from "recharts
 // Trading pairs data
 const tradingPairs = ["BTC-USDT", "ETH-USDT", "XMR-USDT"];
 
+// Trading data interfaces
+interface TradeData {
+  id: string;
+  type: 'LONG' | 'SHORT';
+  startTime: string;
+  endTime: string;
+  fundingTotal: number;
+  periods: number;
+  fee: number;
+  startPrice: number;
+  endPrice: number;
+}
+
+interface PricePoint {
+  timestamp: string;
+  time: string;
+  price: number;
+  openTrade: number | null;
+  closeTrade: number | null;
+  volume: number;
+}
+
 // Generate mock trading data for each pair
 const generateTradingData = (pair: string) => {
   const basePrice = pair === "BTC-USDT" ? 43000 : pair === "ETH-USDT" ? 2500 : 180;
-  const data = [];
+  const data: PricePoint[] = [];
+  const trades: TradeData[] = [];
   
   // Generate more realistic price movements with trend
   let currentPrice = basePrice;
   const trend = (Math.random() - 0.5) * 0.02; // Small trend factor
+  
+  // Generate some realistic trades first
+  for (let t = 0; t < 5; t++) {
+    const startIndex = Math.floor(Math.random() * 70) + 10;
+    const duration = Math.floor(Math.random() * 20) + 5; // 5-25 periods
+    const endIndex = Math.min(startIndex + duration, 95);
+    
+    const tradeType = Math.random() > 0.5 ? 'LONG' : 'SHORT';
+    const fundingTotal = (Math.random() - 0.5) * 2; // -1% to +1%
+    const fee = 1.20;
+    
+    const startTime = new Date(Date.now() - (99 - startIndex) * 15 * 60 * 1000);
+    const endTime = new Date(Date.now() - (99 - endIndex) * 15 * 60 * 1000);
+    
+    trades.push({
+      id: `trade-${t}`,
+      type: tradeType,
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+      fundingTotal,
+      periods: duration,
+      fee,
+      startPrice: 0, // Will be set later
+      endPrice: 0    // Will be set later
+    });
+  }
   
   for (let i = 0; i < 100; i++) {
     // Price moves with some volatility and trend
@@ -21,24 +70,38 @@ const generateTradingData = (pair: string) => {
     const change = (Math.random() - 0.5) * volatility + trend;
     currentPrice = currentPrice * (1 + change);
     
-    const timestamp = new Date(Date.now() - (99 - i) * 15 * 60 * 1000).toISOString(); // 15-minute intervals
+    const timestamp = new Date(Date.now() - (99 - i) * 15 * 60 * 1000);
     
-    // Add realistic trade points - trades are more likely during high volatility
-    const volatilityFactor = Math.abs(change) * 50;
-    const hasOpenTrade = Math.random() > (0.95 - volatilityFactor);
-    const hasCloseTrade = Math.random() > (0.95 - volatilityFactor);
+    // Check if this point is a trade start or end
+    let openTrade = null;
+    let closeTrade = null;
+    
+    for (const trade of trades) {
+      const tradeStart = new Date(trade.startTime).getTime();
+      const tradeEnd = new Date(trade.endTime).getTime();
+      const currentTime = timestamp.getTime();
+      
+      if (Math.abs(currentTime - tradeStart) < 15 * 60 * 1000) { // Within 15 minutes
+        openTrade = currentPrice;
+        trade.startPrice = currentPrice;
+      }
+      if (Math.abs(currentTime - tradeEnd) < 15 * 60 * 1000) { // Within 15 minutes
+        closeTrade = currentPrice;
+        trade.endPrice = currentPrice;
+      }
+    }
     
     data.push({
-      timestamp,
-      time: new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: timestamp.toISOString(),
+      time: timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       price: Math.round(currentPrice * 100) / 100,
-      openTrade: hasOpenTrade ? currentPrice : null,
-      closeTrade: hasCloseTrade ? currentPrice : null,
+      openTrade,
+      closeTrade,
       volume: Math.round((Math.random() * 1000 + 100) * 100) / 100,
     });
   }
   
-  return data;
+  return { data, trades };
 };
 
 const chartConfig = {
@@ -57,7 +120,7 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 const TradingChart = ({ pair }: { pair: string }) => {
-  const data = generateTradingData(pair);
+  const { data, trades } = generateTradingData(pair);
   const currentPrice = data[data.length - 1]?.price || 0;
   const previousPrice = data[data.length - 2]?.price || 0;
   const priceChange = currentPrice - previousPrice;
@@ -65,6 +128,10 @@ const TradingChart = ({ pair }: { pair: string }) => {
   
   const openTrades = data.filter(d => d.openTrade !== null).length;
   const closeTrades = data.filter(d => d.closeTrade !== null).length;
+
+  const formatTradeDate = (dateString: string) => {
+    return new Date(dateString).toISOString().slice(0, 19).replace('T', ' ');
+  };
   
   return (
     <Card className="w-full">
@@ -85,8 +152,8 @@ const TradingChart = ({ pair }: { pair: string }) => {
           </div>
         </CardTitle>
       </CardHeader>
-      <CardContent>
-        <ChartContainer config={chartConfig} className="h-[350px] w-full">
+      <CardContent className="space-y-4">
+        <ChartContainer config={chartConfig} className="h-[300px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={data} margin={{ top: 10, right: 30, left: 10, bottom: 5 }}>
               <XAxis 
@@ -121,7 +188,7 @@ const TradingChart = ({ pair }: { pair: string }) => {
               <Line
                 type="monotone"
                 dataKey="price"
-                stroke="var(--color-price)"
+                stroke="hsl(var(--chart-1))"
                 strokeWidth={2}
                 dot={false}
                 name="price"
@@ -131,9 +198,9 @@ const TradingChart = ({ pair }: { pair: string }) => {
               <Line
                 type="monotone"
                 dataKey="openTrade"
-                stroke="var(--color-openTrade)"
+                stroke="hsl(var(--chart-2))"
                 strokeWidth={0}
-                dot={{ fill: "var(--color-openTrade)", strokeWidth: 2, r: 5 }}
+                dot={{ fill: "hsl(var(--chart-2))", strokeWidth: 2, r: 5 }}
                 connectNulls={false}
                 name="openTrade"
               />
@@ -142,15 +209,39 @@ const TradingChart = ({ pair }: { pair: string }) => {
               <Line
                 type="monotone"
                 dataKey="closeTrade"
-                stroke="var(--color-closeTrade)"
+                stroke="hsl(var(--chart-3))"
                 strokeWidth={0}
-                dot={{ fill: "var(--color-closeTrade)", strokeWidth: 2, r: 5 }}
+                dot={{ fill: "hsl(var(--chart-3))", strokeWidth: 2, r: 5 }}
                 connectNulls={false}
                 name="closeTrade"
               />
             </ComposedChart>
           </ResponsiveContainer>
         </ChartContainer>
+        
+        {/* Trade History */}
+        <div className="space-y-2">
+          <h4 className="font-medium text-sm">Recent Trades</h4>
+          <div className="space-y-1 max-h-32 overflow-y-auto">
+            {trades.map((trade) => (
+              <div key={trade.id} className="text-xs font-mono bg-muted/50 p-2 rounded">
+                <span className={`font-semibold ${trade.type === 'LONG' ? 'text-green-600' : 'text-red-600'}`}>
+                  TRADE {trade.type}
+                </span>
+                {' | '}
+                <span>{formatTradeDate(trade.startTime)} → {formatTradeDate(trade.endTime)}</span>
+                {' | '}
+                <span className={trade.fundingTotal >= 0 ? 'text-green-600' : 'text-red-600'}>
+                  Funding total (neto): {trade.fundingTotal >= 0 ? '+' : ''}{trade.fundingTotal.toFixed(2)}%
+                </span>
+                {' | '}
+                <span>Periods: {trade.periods}</span>
+                {' | '}
+                <span>Fee: ${trade.fee.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
@@ -167,7 +258,7 @@ function App() {
           </p>
         </div>
         
-        <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
           {tradingPairs.map((pair) => (
             <TradingChart key={pair} pair={pair} />
           ))}
@@ -197,8 +288,10 @@ function App() {
               <h4 className="font-medium mb-3">Trading Information</h4>
               <div className="space-y-2 text-sm text-muted-foreground">
                 <p>• Charts show 15-minute interval data over the last 25 hours</p>
-                <p>• Trade markers appear during high volatility periods</p>
-                <p>• Price changes are calculated from the previous period</p>
+                <p>• Each card displays recent trades with detailed information</p>
+                <p>• LONG trades are shown in green, SHORT trades in red</p>
+                <p>• Funding totals show net profit/loss percentage</p>
+                <p>• Trade periods indicate duration in 15-minute intervals</p>
                 <p>• Hover over charts for detailed price and time information</p>
               </div>
             </div>
